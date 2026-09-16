@@ -1,0 +1,10 @@
+{
+  "name": "sillytavern-minigame-image-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check index.js && node --check core.js",
+    "test": "node --test"
+  }
+}

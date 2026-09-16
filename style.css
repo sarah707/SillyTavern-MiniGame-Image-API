@@ -1,0 +1,66 @@
+.minigame-image-api-panel .inline-drawer-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.minigame-image-api-panel label {
+  font-weight: 650;
+}
+
+.minigame-image-api-intro,
+.minigame-image-api-help {
+  margin: 0.25rem 0;
+  line-height: 1.5;
+  opacity: 0.82;
+}
+
+.minigame-image-api-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.minigame-image-api-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.minigame-image-api-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
+.minigame-image-api-status {
+  min-height: 1.4em;
+  white-space: pre-wrap;
+}
+
+.minigame-image-api-status[data-kind="success"] {
+  color: var(--SmartThemeQuoteColor, #7fbf7f);
+}
+
+.minigame-image-api-status[data-kind="error"] {
+  color: var(--fullred, #d9534f);
+}
+
+.minigame-image-api-preview {
+  width: min(100%, 320px);
+  max-height: 320px;
+  margin: 0.5rem auto;
+  border-radius: 10px;
+  object-fit: contain;
+}
+
+@media (max-width: 540px) {
+  .minigame-image-api-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .minigame-image-api-actions .menu_button {
+    width: 100%;
+  }
+}

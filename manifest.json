@@ -1,0 +1,13 @@
+{
+  "display_name": "小游戏轻度生图插件",
+  "loading_order": 100,
+  "requires": [],
+  "optional": [],
+  "js": "index.js",
+  "css": "style.css",
+  "author": "sarah707",
+  "version": "0.1.0",
+  "homePage": "https://github.com/sarah707/SillyTavern-MiniGame-Image-API",
+  "auto_update": true,
+  "minimum_client_version": "1.19.0"
+}

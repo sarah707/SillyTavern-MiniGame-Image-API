@@ -8,6 +8,24 @@
   font-weight: 650;
 }
 
+.minigame-image-api-panel [hidden] {
+  display: none !important;
+}
+
+.minigame-image-api-panel [data-role="credential-group"],
+.minigame-image-api-panel [data-provider-scope]:not(.minigame-image-api-grid) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.minigame-image-api-workflow {
+  min-height: 8rem;
+  resize: vertical;
+  font-family: var(--monoFontFamily, ui-monospace, SFMono-Regular, Consolas, monospace);
+  font-size: 0.86em;
+}
+
 .minigame-image-api-intro,
 .minigame-image-api-help {
   margin: 0.25rem 0;

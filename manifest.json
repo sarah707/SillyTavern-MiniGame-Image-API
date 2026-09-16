@@ -6,7 +6,7 @@
   "js": "index.js",
   "css": "style.css",
   "author": "sarah707",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "homePage": "https://github.com/sarah707/SillyTavern-MiniGame-Image-API",
   "auto_update": true,
   "minimum_client_version": "1.19.0"

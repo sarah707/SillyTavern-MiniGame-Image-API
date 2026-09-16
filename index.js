@@ -25,8 +25,13 @@ const PANEL_ID = 'minigame-image-api-settings';
 
 let settings = { ...DEFAULT_SETTINGS };
 let initialized = false;
+let initPromise = null;
+let apiExposed = false;
 const runtimeModels = new Map();
 const providerLocks = new Map();
+
+const INIT_TIMEOUT_MS = 15_000;
+const INIT_POLL_MS = 100;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -41,6 +46,27 @@ function getContext() {
   const context = globalThis.SillyTavern?.getContext?.();
   if (!context) throw new Error('没有找到 SillyTavern 扩展上下文。');
   return context;
+}
+
+function getSettingsTarget() {
+  return document.getElementById('extensions_settings')
+    || document.getElementById('extensions_settings2');
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function waitForSillyTavernUi(timeoutMs = INIT_TIMEOUT_MS) {
+  const deadline = Date.now() + timeoutMs;
+  do {
+    const context = globalThis.SillyTavern?.getContext?.();
+    const target = getSettingsTarget();
+    if (context?.extensionSettings && target) return { context, target };
+    await delay(INIT_POLL_MS);
+  } while (Date.now() < deadline);
+
+  throw new Error('等待酒馆扩展设置区域超时。请刷新酒馆页面后重试。');
 }
 
 function getHeaders(options) {
@@ -452,17 +478,17 @@ function updateProviderUi(panel) {
   refreshKeyState(provider).catch((error) => setStatus(error.message, 'error'));
 }
 
-function renderSettings() {
-  if (document.getElementById(PANEL_ID)) return;
-  const target = document.getElementById('extensions_settings2') || document.getElementById('extensions_settings');
+function renderSettings(target = getSettingsTarget()) {
+  const existing = document.getElementById(PANEL_ID);
+  if (existing) return existing;
   if (!target) throw new Error('没有找到酒馆扩展设置区域。');
-  const panel = document.createElement('details');
+  const panel = document.createElement('div');
   panel.id = PANEL_ID;
-  panel.className = 'minigame-image-api-panel inline-drawer';
+  panel.className = 'minigame-image-api-panel extension_container inline-drawer';
   panel.innerHTML = `
-    <summary class="inline-drawer-toggle inline-drawer-header">
+    <div class="inline-drawer-toggle inline-drawer-header">
       <b>${DISPLAY_NAME}</b><span class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></span>
-    </summary>
+    </div>
     <div class="inline-drawer-content">
       <p class="minigame-image-api-intro">为角色卡和酒馆小游戏提供独立、可编程的生图接口。云端凭据保存在酒馆服务器密钥库；本地请求由酒馆服务器转发，因此手机连接同一台酒馆时也能调用电脑上的 ComfyUI / WebUI。</p>
       <label>生图服务</label>
@@ -574,6 +600,7 @@ function renderSettings() {
     }
   });
   updateProviderUi(panel);
+  return panel;
 }
 
 async function refreshKeyState(provider = settings.provider) {
@@ -585,9 +612,15 @@ async function refreshKeyState(provider = settings.provider) {
 
 function openSettings() {
   const panel = document.getElementById(PANEL_ID);
-  if (!panel) return false;
-  panel.open = true;
+  if (!panel) {
+    void init();
+    return false;
+  }
   if (panel.offsetParent === null) document.getElementById('extensionsMenuButton')?.click();
+  const content = panel.querySelector(':scope > .inline-drawer-content');
+  if (content && getComputedStyle(content).display === 'none') {
+    panel.querySelector(':scope > .inline-drawer-toggle')?.click();
+  }
   setTimeout(() => panel.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
   return true;
 }
@@ -598,6 +631,8 @@ function getModels(provider = settings.provider) {
 }
 
 function exposeApi() {
+  if (apiExposed) return;
+  apiExposed = true;
   globalThis.STMiniGameImage = Object.freeze({
     apiVersion: API_VERSION,
     extensionId: EXTENSION_ID,
@@ -615,18 +650,36 @@ function exposeApi() {
 
 async function init() {
   if (initialized) return;
-  initialized = true;
-  const context = getContext();
-  settings = normalizeSettings(context.extensionSettings[EXTENSION_ID]);
-  context.extensionSettings[EXTENSION_ID] = { ...settings };
-  renderSettings();
   exposeApi();
-  await refreshKeyState();
-  console.info(`[${DISPLAY_NAME}] v0.2.0 已加载`);
+  if (initPromise) return initPromise;
+
+  initPromise = (async () => {
+    const { context, target } = await waitForSillyTavernUi();
+    settings = normalizeSettings(context.extensionSettings[EXTENSION_ID]);
+    context.extensionSettings[EXTENSION_ID] = { ...settings };
+    renderSettings(target);
+    initialized = true;
+    await refreshKeyState();
+    console.info(`[${DISPLAY_NAME}] v0.2.1 已加载`);
+  })().catch((error) => {
+    console.error(`[${DISPLAY_NAME}] 初始化失败`, error);
+    globalThis.toastr?.error?.(`${DISPLAY_NAME}加载失败：${error.message}`);
+    throw error;
+  }).finally(() => {
+    if (!initialized) initPromise = null;
+  });
+
+  return initPromise;
 }
 
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => void init(), { once: true });
+function startInit() {
+  void init().catch(() => {});
+}
+
+if (typeof globalThis.jQuery === 'function') {
+  globalThis.jQuery(startInit);
+} else if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startInit, { once: true });
 } else {
-  void init();
+  startInit();
 }

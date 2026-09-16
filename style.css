@@ -1,7 +1,9 @@
 .minigame-image-api-panel .inline-drawer-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
+  padding: 0 0.25rem 0.5rem;
+}
+
+.minigame-image-api-panel .inline-drawer-content > * {
+  margin-top: 0.55rem;
 }
 
 .minigame-image-api-panel label {

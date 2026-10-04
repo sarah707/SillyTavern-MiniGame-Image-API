@@ -20,11 +20,38 @@ https://github.com/sarah707/SillyTavern-MiniGame-Image-API
 - Google Vertex AI：使用服务账号 JSON，支持上述 Gemini Image 模型与可配置 Location
 - OpenAI Images：GPT Image 系列，模型名也可手动填写
 - Stability AI：Stable Image Ultra、Core、Stable Diffusion 3 / 3.5
+- NovelAI / NAI Diffusion：Anime V4.5 Full / Curated、Anime V4 Full / Curated、Anime V3、Furry V3
 - Black Forest Labs：FLUX Pro 系列
 - Stable Diffusion WebUI / Forge：读取本地 checkpoint，可设置 Basic Auth、步数、CFG、采样器和种子
 - ComfyUI：读取本地 checkpoint，可用内置标准文生图工作流，也可粘贴自定义 API 工作流 JSON
 
 WebUI / Forge 启动时必须开启 API（通常在启动参数中加 `--api`），默认地址是 `http://127.0.0.1:7860`。ComfyUI 默认地址是 `http://127.0.0.1:8188`。两者都由 SillyTavern 服务器访问，手机端无需直连 `127.0.0.1`。
+
+## NovelAI（NAI）
+
+NAI 通常指 [NovelAI 的图片生成服务](https://docs.novelai.net/en/image/)。在插件中选择“NovelAI / NAI Diffusion”，填写 Persistent API Token，点击“安全保存凭据”。Token 在 NovelAI 的 Settings → Account → Get Persistent API Token 获取，参见[官方说明](https://docs.novelai.net/en/text/usersettings/account/)。
+
+“验证 Token”只检查账户连接；“测试生图”会实际生成图片，按账户订阅规则消耗 Anlas。默认使用 V4.5 Full、1024×1024、28 步。NovelAI 有独立的默认参数，切换本地服务不会覆盖它们。此接入支持官方文生图，不提供第三方 NAI 中转地址、图生图、角色分区或参考图功能。
+
+```js
+const result = await window.STMiniGameImage.generate({
+  provider: 'novelai',
+  prompt: '1girl, solo, school uniform, portrait, detailed anime illustration',
+  negativePrompt: 'text, watermark, low quality',
+  width: 832,
+  height: 1216,
+  steps: 28,
+  cfgScale: 5,
+  sampler: 'k_euler_ancestral',
+  scheduler: 'karras',
+  seed: -1,
+  saveToSillyTavern: true
+});
+```
+
+省略参数时使用 NovelAI 专属默认值。宽高会对齐到 64 的倍数，步数限制在 1–50；也可用 `aspectRatio` 和 `imageSize` 推导尺寸，显式传入完整宽高时优先使用宽高。较大尺寸是否可生成取决于 NovelAI 的限制和账户余额。推荐选用列表内模型；可手填模型名，但未经验证的新模型可能需要更新酒馆。
+
+接口依据为 SillyTavern **1.19.0** 的[服务器路由](https://github.com/SillyTavern/SillyTavern/blob/1.19.0/src/endpoints/novelai.js)与[内置生图调用](https://github.com/SillyTavern/SillyTavern/blob/1.19.0/public/scripts/extensions/stable-diffusion/index.js)。`/api/novelai/generate-image` 使用酒馆服务器保存的 `api_key_novel`，服务器负责解压生成结果并返回 PNG base64。无需另装 NovelAI 扩展或修改角色卡；插件沿用现有密钥切换与恢复逻辑。
 
 ## ComfyUI 自定义工作流
 
@@ -86,6 +113,7 @@ window.STMiniGameImage.openSettings();
 ## 安全说明
 
 - API Key 和 Vertex 服务账号 JSON 通过 SillyTavern `/api/secrets` 接口保存。
+- NovelAI Persistent API Token 也保存在服务器密钥库，扩展设置不保存 Token 明文。
 - 扩展设置只保存密钥编号和遮罩信息，不保存凭据明文。
 - Gemini 可以直接按密钥编号调用。对尚不支持 `secret_id` 的酒馆路由，插件会在请求期间串行地临时启用插件专用密钥，并在结束后恢复玩家原来的活动密钥。
 - 生成结果可选上传到 SillyTavern `user/images` 目录，便于电脑和手机通过同一酒馆地址显示。

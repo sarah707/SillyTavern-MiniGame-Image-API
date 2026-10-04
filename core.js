@@ -49,6 +49,20 @@ export const PROVIDERS = Object.freeze({
       { id: 'stable-diffusion-3', label: 'Stable Diffusion 3 / 3.5' }
     ]
   },
+  novelai: {
+    label: 'NovelAI / NAI Diffusion',
+    credentialLabel: 'NovelAI Persistent API Token',
+    secretKey: 'api_key_novel',
+    credentialType: 'password',
+    models: [
+      { id: 'nai-diffusion-4-5-full', label: 'NAI Anime V4.5 Full' },
+      { id: 'nai-diffusion-4-5-curated', label: 'NAI Anime V4.5 Curated' },
+      { id: 'nai-diffusion-4-full', label: 'NAI Anime V4 Full' },
+      { id: 'nai-diffusion-4-curated-preview', label: 'NAI Anime V4 Curated' },
+      { id: 'nai-diffusion-3', label: 'NAI Anime V3' },
+      { id: 'nai-diffusion-furry-3', label: 'NAI Furry V3' }
+    ]
+  },
   bfl: {
     label: 'Black Forest Labs / FLUX',
     credentialLabel: 'BFL API Key',
@@ -85,6 +99,18 @@ export const ASPECT_RATIOS = Object.freeze([
 
 export const IMAGE_SIZES = Object.freeze(['1K', '2K', '4K']);
 
+// SillyTavern 1.19.0: public/scripts/extensions/stable-diffusion/index.js,
+// loadNovelSamplers/loadNovelSchedulers; src/endpoints/novelai.js, /generate-image.
+export const NOVELAI_SAMPLERS = Object.freeze([
+  'k_euler_ancestral', 'k_euler', 'k_dpmpp_2m', 'k_dpmpp_sde',
+  'k_dpmpp_2s_ancestral', 'k_dpm_fast', 'ddim'
+]);
+export const NOVELAI_SCHEDULERS = Object.freeze(['karras', 'native', 'exponential', 'polyexponential']);
+export const NOVELAI_DEFAULTS = Object.freeze({
+  width: 1024, height: 1024, steps: 28, cfgScale: 5,
+  sampler: 'k_euler_ancestral', scheduler: 'karras', seed: -1
+});
+
 const DEFAULT_MODELS = Object.freeze(Object.fromEntries(
   Object.entries(PROVIDERS).map(([id, provider]) => [id, provider.models[0]?.id || ''])
 ));
@@ -108,6 +134,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   steps: 28,
   cfgScale: 7,
   seed: -1,
+  novelai: NOVELAI_DEFAULTS,
   lastTestedAt: ''
 });
 
@@ -150,7 +177,49 @@ export function normalizeSettings(value = {}) {
     steps: Math.min(150, Math.max(1, Number(source.steps) || DEFAULT_SETTINGS.steps)),
     cfgScale: Math.min(30, Math.max(0, Number(source.cfgScale) || DEFAULT_SETTINGS.cfgScale)),
     seed: Number.isFinite(Number(source.seed)) ? Number(source.seed) : -1,
+    novelai: normalizeNovelAISettings(source.novelai),
     lastTestedAt: String(source.lastTestedAt || '').trim()
+  };
+}
+
+function finiteNumber(value, fallback) {
+  return value !== '' && value != null && Number.isFinite(Number(value)) ? Number(value) : fallback;
+}
+
+function normalizeNovelAISettings(value) {
+  const source = toRecord(value);
+  return {
+    width: Math.max(64, Math.round(finiteNumber(source.width, 1024) / 64) * 64),
+    height: Math.max(64, Math.round(finiteNumber(source.height, 1024) / 64) * 64),
+    steps: Math.min(50, Math.max(1, Math.round(finiteNumber(source.steps, 28)))),
+    cfgScale: Math.min(10, Math.max(0, finiteNumber(source.cfgScale, 5))),
+    sampler: NOVELAI_SAMPLERS.includes(source.sampler) ? source.sampler : NOVELAI_DEFAULTS.sampler,
+    scheduler: NOVELAI_SCHEDULERS.includes(source.scheduler) ? source.scheduler : NOVELAI_DEFAULTS.scheduler,
+    seed: Math.max(-1, Math.trunc(finiteNumber(source.seed, -1)))
+  };
+}
+
+export function buildNovelAIRequest(settings, request = {}) {
+  const prompt = String(request.prompt || '').trim();
+  if (!prompt) throw new Error('生图提示词不能为空。');
+  const defaults = normalizeNovelAISettings(settings.novelai);
+  const sampler = String(request.sampler ?? defaults.sampler);
+  const scheduler = String(request.scheduler ?? defaults.scheduler);
+  if (!NOVELAI_SAMPLERS.includes(sampler)) throw new Error(`NovelAI 不支持采样器：${sampler}`);
+  if (!NOVELAI_SCHEDULERS.includes(scheduler)) throw new Error(`NovelAI 不支持噪声调度：${scheduler}`);
+  const options = normalizeNovelAISettings({ ...defaults, ...request, sampler, scheduler });
+  const dimensions = request.aspectRatio || request.imageSize || request.size
+    ? getDimensions(request, settings)
+    : { width: options.width, height: options.height };
+  return {
+    prompt,
+    negative_prompt: String(request.negativePrompt || '').trim(),
+    model: String(request.model || settings.models?.novelai || PROVIDERS.novelai.models[0].id).trim(),
+    ...dimensions,
+    steps: options.steps,
+    scale: options.cfgScale,
+    sampler, scheduler, seed: options.seed,
+    upscale_ratio: 1
   };
 }
 

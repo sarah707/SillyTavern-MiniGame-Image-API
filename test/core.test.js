@@ -7,6 +7,7 @@ import {
   buildComfyPrompt,
   buildGeminiRequest,
   buildOpenAIRequest,
+  buildNovelAIRequest,
   extractGeminiImages,
   getDimensions,
   normalizeAspectRatio,
@@ -26,6 +27,59 @@ test('normalizes settings without persisting an API key', () => {
   assert.equal(settings.secretIds.gemini, 'secret-1');
   assert.equal(Object.hasOwn(settings, 'apiKey'), false);
   assert.equal(Object.hasOwn(settings, 'serviceAccountJson'), false);
+});
+
+test('NovelAI defaults are independent of local sampler settings and omit plaintext tokens', () => {
+  const settings = normalizeSettings({ provider: 'novelai', sampler: 'euler', scheduler: 'normal', novelai: { token: 'private' } });
+  assert.equal(settings.provider, 'novelai');
+  assert.equal(settings.models.novelai, 'nai-diffusion-4-5-full');
+  assert.equal(settings.novelai.sampler, 'k_euler_ancestral');
+  assert.equal(settings.novelai.scheduler, 'karras');
+  assert.equal(Object.hasOwn(settings.novelai, 'token'), false);
+  const body = buildNovelAIRequest(settings, { prompt: 'portrait' });
+  assert.equal(body.width, 1024);
+  assert.equal(body.height, 1024);
+  assert.equal(body.scale, 5);
+  assert.equal(body.steps, 28);
+  assert.equal(body.seed, -1);
+  assert.equal(body.upscale_ratio, 1);
+  assert.equal(Object.hasOwn(body, 'secret_id'), false);
+});
+
+test('NovelAI maps API overrides to the SillyTavern route and preserves zero CFG and seed', () => {
+  const settings = normalizeSettings({ novelai: { width: 832, height: 1216, seed: 123 } });
+  const body = buildNovelAIRequest(settings, {
+    prompt: ' portrait ', negativePrompt: 'letters', model: 'nai-diffusion-3',
+    width: 513, height: 769, aspectRatio: '16:9', imageSize: '2K',
+    steps: 100, cfgScale: 0, seed: 0, sampler: 'k_dpmpp_2m', scheduler: 'native'
+  });
+  assert.equal(body.prompt, 'portrait');
+  assert.equal(body.negative_prompt, 'letters');
+  assert.equal(body.model, 'nai-diffusion-3');
+  assert.equal(body.width, 512);
+  assert.equal(body.height, 768);
+  assert.equal(body.steps, 50);
+  assert.equal(body.scale, 0);
+  assert.equal(body.seed, 0);
+  assert.equal(body.sampler, 'k_dpmpp_2m');
+  assert.equal(body.scheduler, 'native');
+});
+
+test('NovelAI uses its saved dimensions and supports caller ratio/size dimensions', () => {
+  const settings = normalizeSettings({ novelai: { width: 832, height: 1216 } });
+  const saved = buildNovelAIRequest(settings, { prompt: 'portrait' });
+  assert.equal(saved.width, 832);
+  assert.equal(saved.height, 1216);
+  const inferred = buildNovelAIRequest(settings, { prompt: 'portrait', aspectRatio: '16:9', imageSize: '1K' });
+  assert.equal(inferred.width, 1024);
+  assert.equal(inferred.height, 576);
+});
+
+test('NovelAI rejects empty prompts and incompatible sampler names before any request', () => {
+  const settings = normalizeSettings();
+  assert.throws(() => buildNovelAIRequest(settings, { prompt: ' ' }), /不能为空/);
+  assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', sampler: 'euler' }), /不支持采样器/);
+  assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', scheduler: 'normal' }), /不支持噪声调度/);
 });
 
 test('derives supported ratio and size from code-controlled dimensions', () => {

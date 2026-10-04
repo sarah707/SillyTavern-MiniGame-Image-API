@@ -4,11 +4,14 @@ import {
   DEFAULT_SETTINGS,
   EXTENSION_ID,
   IMAGE_SIZES,
+  NOVELAI_SAMPLERS,
+  NOVELAI_SCHEDULERS,
   PROVIDERS,
   buildA1111Request,
   buildComfyPrompt,
   buildGeminiRequest,
   buildOpenAIRequest,
+  buildNovelAIRequest,
   extractGeminiImages,
   getDimensions,
   makeImage,
@@ -290,6 +293,20 @@ async function generateOpenAI(requestOptions) {
   return { images: [image], raw: response, model: body.model, aspectRatio: requestOptions.aspectRatio || settings.aspectRatio, imageSize: body.size };
 }
 
+async function generateNovelAI(requestOptions) {
+  const body = buildNovelAIRequest(settings, requestOptions);
+  const base64 = await withActiveProviderSecret('novelai', () => requestText('/api/novelai/generate-image', {
+    method: 'POST', body: JSON.stringify(body)
+  }));
+  const image = makeImage('image/png', base64.trim());
+  if (!image) throw new Error('NovelAI 没有返回图片。');
+  return {
+    images: [image], raw: null, model: body.model,
+    aspectRatio: normalizeAspectRatio('', body.width, body.height),
+    imageSize: `${body.width}x${body.height}`
+  };
+}
+
 async function generateStability(requestOptions) {
   const aspectRatio = normalizeAspectRatio(requestOptions.aspectRatio || settings.aspectRatio, requestOptions.width, requestOptions.height);
   const model = String(requestOptions.model || settings.models.stability);
@@ -358,6 +375,7 @@ async function generate(requestOptions = {}) {
   let generated;
   if (provider === 'gemini' || provider === 'vertex') generated = await generateGemini(provider, requestOptions);
   else if (provider === 'openai') generated = await generateOpenAI(requestOptions);
+  else if (provider === 'novelai') generated = await generateNovelAI(requestOptions);
   else if (provider === 'stability') generated = await generateStability(requestOptions);
   else if (provider === 'bfl') generated = await generateBfl(requestOptions);
   else if (provider === 'a1111') generated = await generateA1111(requestOptions);
@@ -386,6 +404,15 @@ async function discoverModels(provider = settings.provider) {
 }
 
 async function testConnection(provider = settings.provider) {
+  if (provider === 'novelai') {
+    const status = await getStatus({ provider });
+    if (!status.ready) return status;
+    const subscription = await withActiveProviderSecret(provider, () => requestJson('/api/novelai/status', {
+      method: 'POST', body: '{}'
+    }));
+    if (subscription?.error) throw new Error('NovelAI Token 验证失败或服务暂时不可用，请检查 Token 和订阅。');
+    return { ...status, message: 'NovelAI Token 验证成功；生图可用性以账户订阅与 Anlas 余额为准。' };
+  }
   if (provider !== 'a1111' && provider !== 'comfyui') return getStatus({ provider });
   const endpoint = provider === 'a1111' ? '/api/sd/ping' : '/api/sd/comfy/ping';
   const body = provider === 'a1111'
@@ -416,7 +443,7 @@ function setBusy(busy) {
 function readForm() {
   const panel = document.getElementById(PANEL_ID);
   const provider = panel?.querySelector('[name="provider"]')?.value || 'gemini';
-  return {
+  const form = {
     provider,
     model: panel?.querySelector('[name="model"]')?.value || '',
     aspectRatio: panel?.querySelector('[name="aspectRatio"]')?.value || '1:1',
@@ -431,6 +458,16 @@ function readForm() {
     cfgScale: Number(panel?.querySelector('[name="cfgScale"]')?.value || 7),
     seed: Number(panel?.querySelector('[name="seed"]')?.value || -1)
   };
+  if (provider === 'novelai') {
+    delete form.aspectRatio;
+    delete form.imageSize;
+    for (const key of ['width', 'height', 'steps', 'cfgScale', 'seed']) {
+      form[key] = Number(panel.querySelector(`[name="novelai-${key}"]`).value);
+    }
+    form.sampler = panel.querySelector('[name="novelai-sampler"]').value;
+    form.scheduler = panel.querySelector('[name="novelai-scheduler"]').value;
+  }
+  return form;
 }
 
 function applyFormSettings() {
@@ -439,17 +476,18 @@ function applyFormSettings() {
     ...settings,
     provider: form.provider,
     models: { ...settings.models, [form.provider]: form.model },
-    aspectRatio: form.aspectRatio,
-    imageSize: form.imageSize,
+    aspectRatio: form.aspectRatio ?? settings.aspectRatio,
+    imageSize: form.imageSize ?? settings.imageSize,
     vertexLocation: form.vertexLocation,
     apiUrls: { ...settings.apiUrls, [form.provider]: form.apiUrl || settings.apiUrls?.[form.provider] },
     a1111Auth: form.a1111Auth,
     comfyWorkflowJson: form.workflowJson,
-    sampler: form.sampler,
-    scheduler: form.scheduler,
-    steps: form.steps,
-    cfgScale: form.cfgScale,
-    seed: form.seed
+    sampler: form.provider === 'novelai' ? settings.sampler : form.sampler,
+    scheduler: form.provider === 'novelai' ? settings.scheduler : form.scheduler,
+    steps: form.provider === 'novelai' ? settings.steps : form.steps,
+    cfgScale: form.provider === 'novelai' ? settings.cfgScale : form.cfgScale,
+    seed: form.provider === 'novelai' ? settings.seed : form.seed,
+    novelai: form.provider === 'novelai' ? form : settings.novelai
   });
   saveSettings();
 }
@@ -508,6 +546,18 @@ function renderSettings(target = getSettingsTarget()) {
         <label>Vertex Location</label>
         <input name="vertexLocation" class="text_pole" value="${escapeHtml(settings.vertexLocation)}" placeholder="global">
       </div>
+      <div data-provider-scope="novelai">
+        <small>在 NovelAI 的 Settings → Account → Get Persistent API Token 获取 Token。此处支持官方文生图；可用模型取决于账户权限。</small>
+      </div>
+      <div class="minigame-image-api-grid" data-provider-scope="novelai">
+        <div><label>宽度（64 的倍数）</label><input name="novelai-width" class="text_pole" type="number" min="64" step="64" value="${settings.novelai.width}"></div>
+        <div><label>高度（64 的倍数）</label><input name="novelai-height" class="text_pole" type="number" min="64" step="64" value="${settings.novelai.height}"></div>
+        <div><label>采样步数（1–50）</label><input name="novelai-steps" class="text_pole" type="number" min="1" max="50" value="${settings.novelai.steps}"></div>
+        <div><label>Prompt Guidance / CFG</label><input name="novelai-cfgScale" class="text_pole" type="number" min="0" max="10" step="0.1" value="${settings.novelai.cfgScale}"></div>
+        <div><label>采样器</label><select name="novelai-sampler" class="text_pole">${NOVELAI_SAMPLERS.map((value) => `<option ${value === settings.novelai.sampler ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+        <div><label>噪声调度</label><select name="novelai-scheduler" class="text_pole">${NOVELAI_SCHEDULERS.map((value) => `<option ${value === settings.novelai.scheduler ? 'selected' : ''}>${value}</option>`).join('')}</select></div>
+        <div><label>Seed（-1 随机）</label><input name="novelai-seed" class="text_pole" type="number" min="-1" value="${settings.novelai.seed}"></div>
+      </div>
       <div data-provider-scope="a1111 comfyui">
         <label>本地 API 地址</label>
         <input name="apiUrl" class="text_pole" autocomplete="off">
@@ -520,7 +570,7 @@ function renderSettings(target = getSettingsTarget()) {
         <label>ComfyUI API 工作流 JSON（可留空）</label>
         <textarea name="workflowJson" class="text_pole minigame-image-api-workflow" spellcheck="false" placeholder="留空时使用标准 checkpoint 文生图工作流；也支持 {{prompt}}、{{negative_prompt}}、{{width}}、{{height}}、{{seed}}、{{model}}、{{steps}}、{{cfg}} 占位符">${escapeHtml(settings.comfyWorkflowJson)}</textarea>
       </div>
-      <div class="minigame-image-api-grid">
+      <div class="minigame-image-api-grid" data-provider-scope="gemini vertex openai stability bfl a1111 comfyui">
         <div><label>默认图片比例</label><select name="aspectRatio" class="text_pole">${ASPECT_RATIOS.map((ratio) => `<option value="${ratio}" ${ratio === settings.aspectRatio ? 'selected' : ''}>${ratio}</option>`).join('')}</select></div>
         <div><label>默认图片尺寸</label><select name="imageSize" class="text_pole">${IMAGE_SIZES.map((size) => `<option value="${size}" ${size === settings.imageSize ? 'selected' : ''}>${size}</option>`).join('')}</select></div>
       </div>
@@ -536,6 +586,7 @@ function renderSettings(target = getSettingsTarget()) {
         <button type="button" class="menu_button" data-action="discover-models">检测服务并读取模型</button>
         <button type="button" class="menu_button" data-action="save-defaults">保存默认参数</button>
         <button type="button" class="menu_button" data-action="test">测试生图</button>
+        <button type="button" class="menu_button" data-action="verify-token" data-provider-scope="novelai">验证 Token</button>
       </div>
       <div class="minigame-image-api-status" data-role="status" aria-live="polite"></div>
       <img class="minigame-image-api-preview" data-role="preview" alt="测试生图结果" hidden>
@@ -591,6 +642,15 @@ function renderSettings(target = getSettingsTarget()) {
         settings.lastTestedAt = new Date().toISOString();
         saveSettings();
         setStatus(`测试成功：${getProvider(result.provider).label} / ${result.model || '当前模型'}`, 'success');
+      } else if (action === 'verify-token') {
+        const credential = panel.querySelector('[name="credential"]');
+        if (credential.value.trim()) {
+          await writeDedicatedSecret(form.provider, credential.value);
+          credential.value = '';
+        }
+        applyFormSettings();
+        const status = await testConnection(form.provider);
+        setStatus(status.message, status.ready ? 'success' : 'error');
       }
       await refreshKeyState(readForm().provider);
     } catch (error) {
@@ -660,7 +720,7 @@ async function init() {
     renderSettings(target);
     initialized = true;
     await refreshKeyState();
-    console.info(`[${DISPLAY_NAME}] v0.2.1 已加载`);
+    console.info(`[${DISPLAY_NAME}] v0.2.2 已加载`);
   })().catch((error) => {
     console.error(`[${DISPLAY_NAME}] 初始化失败`, error);
     globalThis.toastr?.error?.(`${DISPLAY_NAME}加载失败：${error.message}`);

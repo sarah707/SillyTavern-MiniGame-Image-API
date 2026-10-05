@@ -82,8 +82,6 @@ test('NovelAI rejects empty prompts and incompatible sampler names before any re
   assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', sampler: 'euler' }), /不支持采样器/);
   assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', scheduler: 'normal' }), /不支持噪声调度/);
   assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', model: 'erato' }), /文字模型/);
-  assert.throws(() => buildNovelAIRequest(settings, { prompt: '中文头像' }), /不会额外调用文字模型/);
-  assert.throws(() => buildNovelAIRequest(settings, { prompt: 'portrait', negativePrompt: '文字' }), /英文生图提示词/);
 });
 
 test('NovelAI image parser accepts a real PNG and rejects text, HTML, JSON and incomplete bytes', () => {

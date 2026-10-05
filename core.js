@@ -203,9 +203,6 @@ export function buildNovelAIRequest(settings, request = {}) {
   const prompt = String(request.prompt || '').trim();
   if (!prompt) throw new Error('生图提示词不能为空。');
   const defaults = normalizeNovelAISettings(settings.novelai);
-  if (/[\u3400-\u9fff]/u.test(prompt + String(request.negativePrompt || ''))) {
-    throw new Error('NAI 请使用英文生图提示词。插件不会额外调用文字模型翻译，请更新角色卡或直接提供英文提示词。');
-  }
   const model = String(request.model || settings.models?.novelai || PROVIDERS.novelai.models[0].id).trim();
   if (!model.startsWith('nai-diffusion')) {
     throw new Error('NovelAI 生图必须选择 NAI Diffusion 模型，请勿填写 Kayra、Erato 等文字模型。');

@@ -126,14 +126,20 @@ test('NovelAI generation uses the plugin secret, converts PNG base64 and uploads
   assert.equal(runtime.secrets.find((item) => item.active).id, 'original');
 });
 
-test('NovelAI never invokes a text model and rejects Chinese before image generation', async () => {
+test('NovelAI passes prompts of any language to the image endpoint without text model calls', async () => {
   const runtime = createRuntime();
   runtime.settingsContext.ChatCompletionService = { sendRequest() { throw new Error('Must not call a text model'); } };
   await runtime.api.init();
-  await runtime.api.generate({ prompt: '1boy, silver hair, blue eyes, watercolor, no text' });
-  runtime.calls.length = 0;
-  await assert.rejects(runtime.api.generate({ prompt: '中文头像' }), /不会额外调用文字模型/);
-  assert.ok(!runtime.calls.some((call) => call.path === '/api/novelai/generate-image' || call.path === '/api/secrets/rotate'));
+  for (const prompt of ['1boy, silver hair, blue eyes, watercolor, no text', '中文头像，银发蓝眼', '中文头像, silver hair', '銀髪の人物', 'portrait 🙂']) {
+    runtime.calls.length = 0;
+    const result = await runtime.api.generate({ prompt, negativePrompt: '文字, watermark, 低质量' });
+    const requests = runtime.calls.filter((call) => call.path === '/api/novelai/generate-image');
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].body.prompt, prompt);
+    assert.equal(requests[0].body.negative_prompt, '文字, watermark, 低质量');
+    assert.equal(result.images[0].data, PNG);
+    assert.equal(runtime.secrets.find((item) => item.active).id, 'original');
+  }
 });
 
 test('NovelAI generation failure restores the original secret', async () => {

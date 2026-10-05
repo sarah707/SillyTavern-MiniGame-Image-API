@@ -720,7 +720,7 @@ async function init() {
     renderSettings(target);
     initialized = true;
     await refreshKeyState();
-    console.info(`[${DISPLAY_NAME}] v0.2.5 已加载`);
+    console.info(`[${DISPLAY_NAME}] v0.2.6 已加载`);
   })().catch((error) => {
     console.error(`[${DISPLAY_NAME}] 初始化失败`, error);
     globalThis.toastr?.error?.(`${DISPLAY_NAME}加载失败：${error.message}`);

@@ -10,10 +10,6 @@ import {
   buildNovelAIRequest,
   extractGeminiImages,
   extractNovelAIImage,
-  prepareNovelAIPrompt,
-  needsNovelAITranslation,
-  buildNovelAITranslationMessages,
-  parseNovelAITranslation,
   getDimensions,
   normalizeAspectRatio,
   normalizeImageSize,
@@ -86,6 +82,8 @@ test('NovelAI rejects empty prompts and incompatible sampler names before any re
   assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', sampler: 'euler' }), /不支持采样器/);
   assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', scheduler: 'normal' }), /不支持噪声调度/);
   assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', model: 'erato' }), /文字模型/);
+  assert.throws(() => buildNovelAIRequest(settings, { prompt: '中文头像' }), /不会额外调用文字模型/);
+  assert.throws(() => buildNovelAIRequest(settings, { prompt: 'portrait', negativePrompt: '文字' }), /英文生图提示词/);
 });
 
 test('NovelAI image parser accepts a real PNG and rejects text, HTML, JSON and incomplete bytes', () => {
@@ -95,37 +93,6 @@ test('NovelAI image parser accepts a real PNG and rejects text, HTML, JSON and i
     Buffer.from('This is a story.').toString('base64'), png.slice(0, -16)]) {
     assert.throws(() => extractNovelAIImage(value), /未返回有效 PNG/);
   }
-});
-
-test('legacy game image prompts remove Gemini instructions and forbid text panels', () => {
-  const input = prepareNovelAIPrompt({
-    prompt: '请用《原神》画风结合水彩上色风格画一个很帅的男子的头像。请使用 Gemini 当前支持的最小输出分辨率 0.5K 生成。外貌服饰氛围气味：银色短发，蓝眼睛。',
-    negativePrompt: '模糊'
-  });
-  assert.equal(input.noText, true);
-  assert.equal(needsNovelAITranslation(input), true);
-  assert.doesNotMatch(input.prompt, /Gemini|0\.5K/);
-  assert.match(input.negativePrompt, /text, letters/);
-  const messages = buildNovelAITranslationMessages(input);
-  assert.equal(messages.length, 2);
-  assert.match(messages[0].content, /personal names, biography/);
-  assert.match(messages[0].content, /no written text/);
-  assert.equal(JSON.parse(messages[1].content).prompt, input.prompt);
-});
-
-test('English NovelAI prompts retain intentional text requests without translation', () => {
-  const input = prepareNovelAIPrompt({ prompt: 'a shop sign, english text. Text: Bakery', negativePrompt: 'blurry' });
-  assert.equal(needsNovelAITranslation(input), false);
-  assert.equal(input.noText, false);
-  assert.equal(input.negativePrompt, 'blurry');
-});
-
-test('NovelAI translated prompts must be compact English JSON, not a story or source echo', () => {
-  const input = { prompt: '1boy, short silver hair, blue eyes, watercolor', negativePrompt: 'text, letters' };
-  assert.deepEqual(parseNovelAITranslation('```json\n' + JSON.stringify(input) + '\n```'), input);
-  assert.throws(() => parseNovelAITranslation('a story'), /未返回规定的 JSON/);
-  assert.throws(() => parseNovelAITranslation('{"prompt":"中文描述"}'), /简短英文/);
-  assert.throws(() => parseNovelAITranslation(JSON.stringify({ prompt: 'long '.repeat(400) })), /简短英文/);
 });
 
 test('derives supported ratio and size from code-controlled dimensions', () => {

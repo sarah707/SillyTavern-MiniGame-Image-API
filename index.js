@@ -6,17 +6,12 @@ import {
   IMAGE_SIZES,
   NOVELAI_SAMPLERS,
   NOVELAI_SCHEDULERS,
-  NOVELAI_TEXT_EXCLUSIONS,
   PROVIDERS,
   buildA1111Request,
   buildComfyPrompt,
   buildGeminiRequest,
   buildOpenAIRequest,
   buildNovelAIRequest,
-  prepareNovelAIPrompt,
-  needsNovelAITranslation,
-  buildNovelAITranslationMessages,
-  parseNovelAITranslation,
   extractGeminiImages,
   extractNovelAIImage,
   getDimensions,
@@ -299,50 +294,14 @@ async function generateOpenAI(requestOptions) {
   return { images: [image], raw: response, model: body.model, aspectRatio: requestOptions.aspectRatio || settings.aspectRatio, imageSize: body.size };
 }
 
-async function translateNovelAIPrompt(input) {
-  // Host-provided API, verified against ST 1.19.0 st-context.js/custom-request.js.
-  // A literal preset builds an independent request using the current text connection.
-  const context = getContext();
-  const service = context.ChatCompletionService;
-  if (context.mainApi !== 'openai' || typeof context.getChatCompletionModel !== 'function'
-      || typeof service?.presetToGeneratePayload !== 'function' || typeof service?.sendRequest !== 'function') {
-    throw new Error('NAI 的中文提示词需要先转为英文，请连接酒馆的聊天补全文字模型；也可直接提供英文生图提示词。');
-  }
-  return runSerialized('novelai-prompt-translation', async () => {
-    const body = await service.presetToGeneratePayload({
-      temperature: 0.2, top_p: 0.9, openai_max_tokens: 768, n: 1,
-      stream_openai: false, request_images: false, use_sysprompt: true,
-      reasoning_effort: 'minimal', show_thoughts: false, enable_web_search: false,
-      function_calling: false, assistant_prefill: '', bias_preset_selected: '',
-      custom_include_body: '', custom_exclude_body: '', custom_prompt_post_processing: ''
-    }, {}, { model: context.getChatCompletionModel(), messages: buildNovelAITranslationMessages(input) });
-    body.stream = false;
-    body.request_images = false;
-    body.include_reasoning = false;
-    for (const key of ['stop', 'logprobs', 'top_logprobs', 'logit_bias', 'tools', 'tool_choice']) delete body[key];
-    const result = await service.sendRequest(body, false);
-    const content = Array.isArray(result?.content)
-      ? result.content.filter((part) => part?.type === 'text').map((part) => part.text).join('')
-      : result?.choices?.[0]?.message?.content ?? result?.choices?.[0]?.text ?? result?.content;
-    const text = Array.isArray(content)
-      ? content.filter((part) => part?.type === 'text').map((part) => part.text).join('') : content;
-    return parseNovelAITranslation(text);
-  });
-}
-
 async function generateNovelAI(requestOptions) {
   const body = buildNovelAIRequest(settings, requestOptions);
-  const input = prepareNovelAIPrompt(requestOptions);
-  const promptTranslated = needsNovelAITranslation(input);
-  const prepared = promptTranslated ? await translateNovelAIPrompt(input) : input;
-  body.prompt = input.noText ? `${prepared.prompt}, no text` : prepared.prompt;
-  body.negative_prompt = input.noText ? `${prepared.negativePrompt}, ${NOVELAI_TEXT_EXCLUSIONS}` : prepared.negativePrompt;
   const base64 = await withActiveProviderSecret('novelai', () => requestText('/api/novelai/generate-image', {
     method: 'POST', body: JSON.stringify(body)
   }));
   const image = extractNovelAIImage(base64);
   return {
-    images: [image], raw: null, model: body.model, promptTranslated,
+    images: [image], raw: null, model: body.model,
     aspectRatio: normalizeAspectRatio('', body.width, body.height),
     imageSize: `${body.width}x${body.height}`
   };
@@ -589,7 +548,6 @@ function renderSettings(target = getSettingsTarget()) {
       </div>
       <div data-provider-scope="novelai">
         <small>在 NovelAI 的 Settings → Account → Get Persistent API Token 获取 Token。此处支持官方文生图；可用模型取决于账户权限。</small>
-        <small>中文提示词会先用酒馆当前连接的聊天补全文字模型转成英文绘图描述，每次额外调用一次文字模型；英文提示词直接生图。请先配置并连接文字模型。</small>
       </div>
       <div class="minigame-image-api-grid" data-provider-scope="novelai">
         <div><label>宽度（64 的倍数）</label><input name="novelai-width" class="text_pole" type="number" min="64" step="64" value="${settings.novelai.width}"></div>
@@ -762,7 +720,7 @@ async function init() {
     renderSettings(target);
     initialized = true;
     await refreshKeyState();
-    console.info(`[${DISPLAY_NAME}] v0.2.4 已加载`);
+    console.info(`[${DISPLAY_NAME}] v0.2.5 已加载`);
   })().catch((error) => {
     console.error(`[${DISPLAY_NAME}] 初始化失败`, error);
     globalThis.toastr?.error?.(`${DISPLAY_NAME}加载失败：${error.message}`);

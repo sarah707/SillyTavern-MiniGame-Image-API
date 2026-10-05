@@ -35,13 +35,7 @@ NAI 通常指 [NovelAI 的图片生成服务](https://docs.novelai.net/en/image/
 
 从 0.2.3 起，插件检查返回数据的 PNG 文件标识，并拒绝文字、HTML、JSON 和不完整数据，避免异常响应被误报为生图成功。模型栏也会拒绝 Kayra、Erato 等文字模型。若遇到“出文字”，请记录插件版本、酒馆版本、模型名，以及文字出现在插件预览、错误提示还是聊天楼层；截图不要包含 Token。自动测试使用图片样本和模拟服务器，不能代替真实账户的生图验证。
 
-从 0.2.4 起，NAI 请求中的中文提示词或负面提示词先通过**酒馆当前连接的聊天补全文字模型**转成简短英文视觉描述，再请求 NAI 生图。每次中文生图会增加一次文字模型调用，使用该连接现有的密钥和计费；英文提示词直接发送。请先配置并连接文字模型。无法转换、仍含中文或结果不是规定格式时，插件停止 NAI 请求并显示错误，不将中文原文直接发送给扩散模型。
-
-这个转换使用 SillyTavern 1.19.0 提供的 `getContext().ChatCompletionService.presetToGeneratePayload` / `sendRequest` 和 `getChatCompletionModel`，通过独立消息调用当前文字连接；不读角色卡、聊天历史或世界书，也不写聊天楼层。来源：[st-context.js](https://github.com/SillyTavern/SillyTavern/blob/1.19.0/public/scripts/st-context.js)、[custom-request.js](https://github.com/SillyTavern/SillyTavern/blob/1.19.0/public/scripts/custom-request.js)。这些能力由酒馆宿主提供，无需酒馆助手或额外翻译服务。
-
-旧版《贵族学院的特招生》的头像/礼服提示词含有中文的“请使用 Gemini……0.5K”指令。插件识别这些请求后移除该指令，提取英文外观描述，并补上 `no text` 与禁止文字、文档、截图的负面标签。因此已有角色卡也能通过更新插件获得适配；普通英文 NAI API 请求中显式要求画文字的用法不受此规则影响。此修复针对提示词适配，不会修改已经保存的图片；更新后需要在角色页重新生成头像或礼服图片。
-
-提示词依据：[NovelAI 模型文档](https://docs.novelai.net/en/image/models/)说明 V4/V4.5 的 T5 tokenizer 对多数 Unicode 字符支持有限；[文字渲染文档](https://docs.novelai.net/en/image/textrendering/)说明这些模型可以把文字画进图片。一个包含伪文字的 PNG 仍是真图片，文件校验无法判断它是否符合角色外观要求。
+从 0.2.5 起，移除 0.2.4 的中文自动翻译功能，生图插件不再额外调用文字模型。NAI 的提示词和负面提示词应直接使用英文；中文输入会明确报错并停止请求。新版《贵族学院的特招生》会在原本的剧情生成回复中同时输出角色和礼服的“英文生图提示词”，保存后直接用于图片请求。旧版角色卡需要更新后才能生成这个字段。
 
 ```js
 const result = await window.STMiniGameImage.generate({

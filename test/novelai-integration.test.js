@@ -10,9 +10,7 @@ const source = (await readFile(new URL('../index.js', import.meta.url), 'utf8'))
 
 const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
-function createRuntime({ generateFailure = false, tokenError = false, imageResponse = PNG,
-  translationResponse = '{"prompt":"1boy, short silver hair, blue eyes, white shirt, watercolor, white background","negativePrompt":"text, blurry"}',
-  textConnection = true } = {}) {
+function createRuntime({ generateFailure = false, tokenError = false, imageResponse = PNG } = {}) {
   const calls = [];
   const secrets = [
     { id: 'original', active: true, value: 'masked-original' },
@@ -32,25 +30,6 @@ function createRuntime({ generateFailure = false, tokenError = false, imageRespo
     saveSettingsDebounced() {},
     getRequestHeaders() { return { 'Content-Type': 'application/json' }; }
   };
-  if (textConnection) {
-    settingsContext.mainApi = 'openai';
-    settingsContext.getChatCompletionModel = () => 'current-text-model';
-    settingsContext.ChatCompletionService = {
-      async presetToGeneratePayload(preset, overrides, payload) {
-        calls.push({ path: 'translation-build', preset, overrides, body: payload });
-        return { ...payload, stream: true, request_images: true, tools: ['must-remove'], stop: ['must-remove'] };
-      },
-      async sendRequest(body, extractData) {
-        calls.push({ path: 'translation-send', body });
-        assert.equal(extractData, false);
-        assert.equal(body.stream, false);
-        assert.equal(body.request_images, false);
-        assert.equal(body.tools, undefined);
-        assert.equal(body.stop, undefined);
-        return { choices: [{ message: { content: translationResponse } }] };
-      }
-    };
-  }
   function element(selector) {
     if (!elements.has(selector)) elements.set(selector, { value: '', dataset: {}, hidden: false, addEventListener() {} });
     return elements.get(selector);
@@ -147,6 +126,16 @@ test('NovelAI generation uses the plugin secret, converts PNG base64 and uploads
   assert.equal(runtime.secrets.find((item) => item.active).id, 'original');
 });
 
+test('NovelAI never invokes a text model and rejects Chinese before image generation', async () => {
+  const runtime = createRuntime();
+  runtime.settingsContext.ChatCompletionService = { sendRequest() { throw new Error('Must not call a text model'); } };
+  await runtime.api.init();
+  await runtime.api.generate({ prompt: '1boy, silver hair, blue eyes, watercolor, no text' });
+  runtime.calls.length = 0;
+  await assert.rejects(runtime.api.generate({ prompt: '中文头像' }), /不会额外调用文字模型/);
+  assert.ok(!runtime.calls.some((call) => call.path === '/api/novelai/generate-image' || call.path === '/api/secrets/rotate'));
+});
+
 test('NovelAI generation failure restores the original secret', async () => {
   const runtime = createRuntime({ generateFailure: true });
   await runtime.api.init();
@@ -160,39 +149,6 @@ test('NovelAI rejects an HTTP 200 text response and does not upload it or report
   await assert.rejects(runtime.api.generate({ prompt: 'flower', saveToSillyTavern: true }), /未返回有效 PNG/);
   assert.equal(runtime.secrets.find((item) => item.active).id, 'original');
   assert.ok(!runtime.calls.some((call) => call.path === '/api/images/upload'));
-});
-
-test('Chinese game prompts are converted before NAI generation; model labels and Chinese do not reach diffusion', async () => {
-  const runtime = createRuntime();
-  await runtime.api.init();
-  const result = await runtime.api.generate({
-    prompt: '请用《原神》画风结合水彩上色风格画一个很帅的男子的头像。请使用 Gemini 当前支持的最小输出分辨率 0.5K 生成。外貌服饰氛围气味：银色短发、蓝眼睛、白色衬衫。',
-    negativePrompt: '文字，模糊'
-  });
-  assert.equal(result.promptTranslated, true);
-  const body = runtime.calls.find((call) => call.path === '/api/novelai/generate-image').body;
-  assert.match(body.prompt, /short silver hair, blue eyes, white shirt/);
-  assert.match(body.prompt, /no text/);
-  assert.match(body.negative_prompt, /screenshot, document, newspaper/);
-  assert.doesNotMatch(body.prompt + body.negative_prompt, /Gemini|0\.5K|[\u3400-\u9fff]/u);
-  assert.ok(runtime.calls.findIndex((call) => call.path === 'translation-send') < runtime.calls.findIndex((call) => call.path === '/api/secrets/rotate'));
-});
-
-test('English prompts do not invoke a text model; Chinese prompts without one fail before paid generation', async () => {
-  const runtime = createRuntime({ textConnection: false });
-  await runtime.api.init();
-  const english = await runtime.api.generate({ prompt: 'flower' });
-  assert.equal(english.promptTranslated, false);
-  runtime.calls.length = 0;
-  await assert.rejects(runtime.api.generate({ prompt: '银色短发、蓝眼睛' }), /聊天补全文字模型/);
-  assert.ok(!runtime.calls.some((call) => call.path === '/api/novelai/generate-image'));
-});
-
-test('Invalid conversion output is rejected before rotating the NAI token or generating', async () => {
-  const runtime = createRuntime({ translationResponse: '{"prompt":"中文人物描述"}' });
-  await runtime.api.init();
-  await assert.rejects(runtime.api.generate({ prompt: '银色短发、蓝眼睛' }), /简短英文/);
-  assert.ok(!runtime.calls.some((call) => call.path === '/api/secrets/rotate' || call.path === '/api/novelai/generate-image'));
 });
 
 test('NovelAI concurrent calls serialize secret rotation and restore the original secret', async () => {

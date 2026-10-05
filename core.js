@@ -111,6 +111,17 @@ export const NOVELAI_DEFAULTS = Object.freeze({
   sampler: 'k_euler_ancestral', scheduler: 'karras', seed: -1
 });
 
+// Quality tags informed by NovelAI's V4/V4.5 Undesired Content presets:
+// https://docs.novelai.net/en/image/undesiredcontent/
+// Avatar additions exclude text panels, extra subjects and obvious anatomy errors.
+// Do not exclude colors, accessories, facial features or the watercolor art style.
+export const DEFAULT_NEGATIVE_PROMPTS = Object.freeze({
+  novelai: 'lowres, worst quality, bad quality, blurry, jpeg artifacts, bad anatomy, deformed face, extra limbs, text, letters, watermark, logo, speech bubble, multiple views, split screen, multiple people, duplicate, screenshot, document, newspaper',
+  stability: '',
+  a1111: '',
+  comfyui: ''
+});
+
 const DEFAULT_MODELS = Object.freeze(Object.fromEntries(
   Object.entries(PROVIDERS).map(([id, provider]) => [id, provider.models[0]?.id || ''])
 ));
@@ -135,6 +146,7 @@ export const DEFAULT_SETTINGS = Object.freeze({
   cfgScale: 7,
   seed: -1,
   novelai: NOVELAI_DEFAULTS,
+  negativePrompts: DEFAULT_NEGATIVE_PROMPTS,
   lastTestedAt: ''
 });
 
@@ -178,8 +190,18 @@ export function normalizeSettings(value = {}) {
     cfgScale: Math.min(30, Math.max(0, Number(source.cfgScale) || DEFAULT_SETTINGS.cfgScale)),
     seed: Number.isFinite(Number(source.seed)) ? Number(source.seed) : -1,
     novelai: normalizeNovelAISettings(source.novelai),
+    negativePrompts: Object.fromEntries(Object.entries(DEFAULT_NEGATIVE_PROMPTS).map(([id, fallback]) => [
+      id, String(toRecord(source.negativePrompts)[id] ?? fallback).trim()
+    ])),
     lastTestedAt: String(source.lastTestedAt || '').trim()
   };
+}
+
+export function resolveNegativePrompt(settings, provider, value) {
+  const supplied = String(value ?? '').trim();
+  if (!Object.hasOwn(DEFAULT_NEGATIVE_PROMPTS, provider)) return supplied;
+  const configured = String(settings.negativePrompts?.[provider] ?? DEFAULT_NEGATIVE_PROMPTS[provider]).trim();
+  return [...new Set([configured, supplied].filter(Boolean))].join(', ');
 }
 
 function finiteNumber(value, fallback) {

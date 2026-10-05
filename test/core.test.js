@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   DEFAULT_MODEL,
+  DEFAULT_NEGATIVE_PROMPTS,
   buildA1111Request,
   buildComfyPrompt,
   buildGeminiRequest,
@@ -13,7 +14,8 @@ import {
   getDimensions,
   normalizeAspectRatio,
   normalizeImageSize,
-  normalizeSettings
+  normalizeSettings,
+  resolveNegativePrompt
 } from '../core.js';
 
 test('normalizes settings without persisting an API key', () => {
@@ -82,6 +84,26 @@ test('NovelAI rejects empty prompts and incompatible sampler names before any re
   assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', sampler: 'euler' }), /不支持采样器/);
   assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', scheduler: 'normal' }), /不支持噪声调度/);
   assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', model: 'erato' }), /文字模型/);
+});
+
+test('negative prompt settings initialize NAI avatars, preserve cleared fields and keep modes independent', () => {
+  const defaults = normalizeSettings();
+  assert.equal(defaults.negativePrompts.novelai, DEFAULT_NEGATIVE_PROMPTS.novelai);
+  assert.equal(defaults.negativePrompts.a1111, '');
+  const saved = normalizeSettings({ negativePrompts: { novelai: '', a1111: '中文, bad hands', stability: 'grain', comfyui: 'blur', gemini: 'ignored' } });
+  assert.deepEqual(saved.negativePrompts, { novelai: '', stability: 'grain', a1111: '中文, bad hands', comfyui: 'blur' });
+  assert.deepEqual(normalizeSettings(JSON.parse(JSON.stringify(saved))).negativePrompts, saved.negativePrompts);
+});
+
+test('configured negative prompts merge with caller exclusions without language filtering or altered emphasis', () => {
+  const settings = normalizeSettings({ negativePrompts: { novelai: '{bad anatomy}, 中文', a1111: '' } });
+  assert.equal(resolveNegativePrompt(settings, 'novelai', 'watermark'), '{bad anatomy}, 中文, watermark');
+  assert.equal(resolveNegativePrompt(settings, 'novelai', '{bad anatomy}, 中文'), '{bad anatomy}, 中文');
+  assert.equal(resolveNegativePrompt(settings, 'a1111', '文字'), '文字');
+  for (const provider of ['gemini', 'vertex', 'openai', 'bfl']) {
+    assert.equal(resolveNegativePrompt(settings, provider, 'caller exclusions'), 'caller exclusions');
+    assert.equal(resolveNegativePrompt(settings, provider), '');
+  }
 });
 
 test('NovelAI image parser accepts a real PNG and rejects text, HTML, JSON and incomplete bytes', () => {

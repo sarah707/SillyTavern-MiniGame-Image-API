@@ -57,6 +57,21 @@ const result = await window.STMiniGameImage.generate({
 
 接口依据为 SillyTavern **1.19.0** 的[服务器路由](https://github.com/SillyTavern/SillyTavern/blob/1.19.0/src/endpoints/novelai.js)与[内置生图调用](https://github.com/SillyTavern/SillyTavern/blob/1.19.0/public/scripts/extensions/stable-diffusion/index.js)。`/api/novelai/generate-image` 使用酒馆服务器保存的 `api_key_novel`，服务器负责解压生成结果并返回 PNG base64。无需另装 NovelAI 扩展或修改角色卡；插件沿用现有密钥切换与恢复逻辑。
 
+## 负面提示词设置（0.2.7）
+
+NAI、Stability AI、WebUI / Forge 和 ComfyUI 设置中提供“负面提示词”输入框，每种模式单独保存。填写后点击“保存默认参数”。这些文字会与角色卡调用传入的 `negativePrompt` 合并使用，因此角色卡自身的禁止文字要求不会覆盖玩家设置。清空输入框并保存，可取消插件为该模式追加的默认词；角色卡传入的内容仍保留。中文、英文和混合输入均不做语言校验。
+
+NAI 初次升级会预填一组适合单人头像的负面词：参考 [NovelAI 官方 Undesired Content 预设](https://docs.novelai.net/en/image/undesiredcontent/)中的画质排除项，另加文字、水印、文档截图、多人物和分镜等排除项。没有限制人物性别、发色、饰品或水彩画风；可按生成结果自行编辑，清空后不会在下次刷新时重新填入。其他模式默认留空。
+
+| 模式 | 输入框 |
+| --- | --- |
+| NAI、Stability、WebUI / Forge | 显示 |
+| ComfyUI 标准工作流 | 显示，传给负面 CLIP 编码节点 |
+| ComfyUI 自定义工作流 | 仅含 `{{negative_prompt}}` 占位符时显示 |
+| Gemini、Vertex 的 Gemini Image、OpenAI Images、BFL / FLUX Pro | 不显示，当前接入没有原生负面提示词参数 |
+
+Gemini API 调用方原有的 `negativePrompt` 文本仍会按既有行为附加为自然语言避免要求；这里不新增默认设置。ComfyUI 自定义工作流若完全不使用 `{{negative_prompt}}`，插件无法将此字段注入其中。
+
 ## ComfyUI 自定义工作流
 
 在 ComfyUI 中使用“Save (API Format)”导出工作流，再粘贴到插件设置。可在 JSON 字符串或完整字段中使用：
@@ -101,7 +116,7 @@ const result = await window.STMiniGameImage.generate({
 const firstImageUrl = result.images[0].url;
 ```
 
-调用本地服务时只需更换 `provider`，也可传入 `width`、`height`、`steps`、`cfgScale`、`sampler`、`scheduler`、`seed`、`apiUrl`和 `workflowJson`。调用参数优先于扩展设置中的默认值。
+调用本地服务时只需更换 `provider`，也可传入 `width`、`height`、`steps`、`cfgScale`、`sampler`、`scheduler`、`seed`、`apiUrl`和 `workflowJson`。普通调用参数优先于扩展设置中的默认值；支持负面提示词的模式会将保存的负面词与调用方的 `negativePrompt` 合并。
 
 另外提供：
 

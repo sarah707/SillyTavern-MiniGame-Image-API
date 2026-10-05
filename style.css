@@ -28,6 +28,11 @@
   font-size: 0.86em;
 }
 
+.minigame-image-api-negative {
+  min-height: 6rem;
+  resize: vertical;
+}
+
 .minigame-image-api-intro,
 .minigame-image-api-help {
   margin: 0.25rem 0;

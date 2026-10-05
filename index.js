@@ -2,6 +2,7 @@ import {
   API_VERSION,
   ASPECT_RATIOS,
   DEFAULT_SETTINGS,
+  DEFAULT_NEGATIVE_PROMPTS,
   EXTENSION_ID,
   IMAGE_SIZES,
   NOVELAI_SAMPLERS,
@@ -19,6 +20,7 @@ import {
   normalizeAspectRatio,
   normalizeImageSize,
   normalizeSettings,
+  resolveNegativePrompt,
   sanitizeFileName
 } from './core.js';
 
@@ -371,6 +373,10 @@ async function generate(requestOptions = {}) {
   const status = await getStatus({ provider });
   if (!status.ready) throw new Error(status.message);
   if (!String(requestOptions.prompt || '').trim()) throw new Error('生图提示词不能为空。');
+  requestOptions = {
+    ...requestOptions,
+    negativePrompt: resolveNegativePrompt(settings, provider, requestOptions.negativePrompt)
+  };
 
   let generated;
   if (provider === 'gemini' || provider === 'vertex') generated = await generateGemini(provider, requestOptions);
@@ -467,6 +473,9 @@ function readForm() {
     form.sampler = panel.querySelector('[name="novelai-sampler"]').value;
     form.scheduler = panel.querySelector('[name="novelai-scheduler"]').value;
   }
+  if (Object.hasOwn(DEFAULT_NEGATIVE_PROMPTS, provider)) {
+    form.negativePrompt = panel.querySelector(`[name="negativePrompt-${provider}"]`).value;
+  }
   return form;
 }
 
@@ -487,9 +496,19 @@ function applyFormSettings() {
     steps: form.provider === 'novelai' ? settings.steps : form.steps,
     cfgScale: form.provider === 'novelai' ? settings.cfgScale : form.cfgScale,
     seed: form.provider === 'novelai' ? settings.seed : form.seed,
-    novelai: form.provider === 'novelai' ? form : settings.novelai
+    novelai: form.provider === 'novelai' ? form : settings.novelai,
+    negativePrompts: Object.hasOwn(DEFAULT_NEGATIVE_PROMPTS, form.provider)
+      ? { ...settings.negativePrompts, [form.provider]: form.negativePrompt }
+      : settings.negativePrompts
   });
   saveSettings();
+}
+
+function updateNegativePromptUi(panel) {
+  const group = panel.querySelector('[data-negative-provider="comfyui"]');
+  const provider = panel.querySelector('[name="provider"]').value;
+  const workflow = panel.querySelector('[name="workflowJson"]').value.trim();
+  group.hidden = provider !== 'comfyui' || (Boolean(workflow) && !workflow.includes('{{negative_prompt}}'));
 }
 
 function updateProviderUi(panel) {
@@ -504,6 +523,7 @@ function updateProviderUi(panel) {
   panel.querySelectorAll('[data-provider-scope]').forEach((element) => {
     element.hidden = !element.dataset.providerScope.split(/\s+/).includes(provider);
   });
+  updateNegativePromptUi(panel);
   const credentialLabel = panel.querySelector('[data-role="credential-label"]');
   if (credentialLabel) credentialLabel.textContent = definition.credentialLabel;
   panel.querySelector('[name="credential"]').hidden = definition.credentialType !== 'password';
@@ -570,6 +590,12 @@ function renderSettings(target = getSettingsTarget()) {
         <label>ComfyUI API 工作流 JSON（可留空）</label>
         <textarea name="workflowJson" class="text_pole minigame-image-api-workflow" spellcheck="false" placeholder="留空时使用标准 checkpoint 文生图工作流；也支持 {{prompt}}、{{negative_prompt}}、{{width}}、{{height}}、{{seed}}、{{model}}、{{steps}}、{{cfg}} 占位符">${escapeHtml(settings.comfyWorkflowJson)}</textarea>
       </div>
+      ${Object.keys(DEFAULT_NEGATIVE_PROMPTS).map((provider) => `
+      <div data-provider-scope="${provider}" data-negative-provider="${provider}">
+        <label for="minigame-negative-${provider}">负面提示词</label>
+        <textarea id="minigame-negative-${provider}" name="negativePrompt-${provider}" class="text_pole minigame-image-api-negative" spellcheck="false" placeholder="可留空，填写希望图片避免出现的内容">${escapeHtml(settings.negativePrompts[provider])}</textarea>
+        <small>与小游戏传入的负面提示词合并使用；每种生图模式单独保存。清空此处可取消本模式的默认负面词。</small>
+      </div>`).join('')}
       <div class="minigame-image-api-grid" data-provider-scope="gemini vertex openai stability bfl a1111 comfyui">
         <div><label>默认图片比例</label><select name="aspectRatio" class="text_pole">${ASPECT_RATIOS.map((ratio) => `<option value="${ratio}" ${ratio === settings.aspectRatio ? 'selected' : ''}>${ratio}</option>`).join('')}</select></div>
         <div><label>默认图片尺寸</label><select name="imageSize" class="text_pole">${IMAGE_SIZES.map((size) => `<option value="${size}" ${size === settings.imageSize ? 'selected' : ''}>${size}</option>`).join('')}</select></div>
@@ -596,6 +622,7 @@ function renderSettings(target = getSettingsTarget()) {
   target.append(panel);
 
   panel.querySelector('[name="provider"]').addEventListener('change', () => updateProviderUi(panel));
+  panel.querySelector('[name="workflowJson"]').addEventListener('input', () => updateNegativePromptUi(panel));
   panel.addEventListener('click', async (event) => {
     const action = event.target.closest('[data-action]')?.dataset.action;
     if (!action) return;
@@ -720,7 +747,7 @@ async function init() {
     renderSettings(target);
     initialized = true;
     await refreshKeyState();
-    console.info(`[${DISPLAY_NAME}] v0.2.6 已加载`);
+    console.info(`[${DISPLAY_NAME}] v0.2.7 已加载`);
   })().catch((error) => {
     console.error(`[${DISPLAY_NAME}] 初始化失败`, error);
     globalThis.toastr?.error?.(`${DISPLAY_NAME}加载失败：${error.message}`);

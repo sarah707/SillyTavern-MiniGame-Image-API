@@ -33,6 +33,8 @@ NAI 通常指 [NovelAI 的图片生成服务](https://docs.novelai.net/en/image/
 
 “验证 Token”只检查账户连接；“测试生图”会实际生成图片，按账户订阅规则消耗 Anlas。默认使用 V4.5 Full、1024×1024、28 步。NovelAI 有独立的默认参数，切换本地服务不会覆盖它们。此接入支持官方文生图，不提供第三方 NAI 中转地址、图生图、角色分区或参考图功能。
 
+从 0.2.3 起，插件检查返回数据的 PNG 文件标识，并拒绝文字、HTML、JSON 和不完整数据，避免异常响应被误报为生图成功。模型栏也会拒绝 Kayra、Erato 等文字模型。若遇到“出文字”，请记录插件版本、酒馆版本、模型名，以及文字出现在插件预览、错误提示还是聊天楼层；截图不要包含 Token。自动测试使用图片样本和模拟服务器，不能代替真实账户的生图验证。
+
 ```js
 const result = await window.STMiniGameImage.generate({
   provider: 'novelai',

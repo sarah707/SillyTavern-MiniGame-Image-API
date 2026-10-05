@@ -203,6 +203,10 @@ export function buildNovelAIRequest(settings, request = {}) {
   const prompt = String(request.prompt || '').trim();
   if (!prompt) throw new Error('生图提示词不能为空。');
   const defaults = normalizeNovelAISettings(settings.novelai);
+  const model = String(request.model || settings.models?.novelai || PROVIDERS.novelai.models[0].id).trim();
+  if (!model.startsWith('nai-diffusion')) {
+    throw new Error('NovelAI 生图必须选择 NAI Diffusion 模型，请勿填写 Kayra、Erato 等文字模型。');
+  }
   const sampler = String(request.sampler ?? defaults.sampler);
   const scheduler = String(request.scheduler ?? defaults.scheduler);
   if (!NOVELAI_SAMPLERS.includes(sampler)) throw new Error(`NovelAI 不支持采样器：${sampler}`);
@@ -214,7 +218,7 @@ export function buildNovelAIRequest(settings, request = {}) {
   return {
     prompt,
     negative_prompt: String(request.negativePrompt || '').trim(),
-    model: String(request.model || settings.models?.novelai || PROVIDERS.novelai.models[0].id).trim(),
+    model,
     ...dimensions,
     steps: options.steps,
     scale: options.cfgScale,
@@ -424,6 +428,21 @@ export function makeImage(mimeType, data) {
   const normalizedData = String(data || '').replace(/^data:[^;,]+;base64,/, '');
   if (!normalizedData) return null;
   return { mimeType: normalizedMimeType, data: normalizedData, dataUrl: `data:${normalizedMimeType};base64,${normalizedData}` };
+}
+
+export function extractNovelAIImage(responseText) {
+  // ST /api/novelai/generate-image returns PNG bytes encoded as base64 text.
+  // A successful HTTP status alone does not prove that the body is an image.
+  const data = String(responseText || '').trim();
+  const failure = () => new Error('NovelAI 生图接口未返回有效 PNG 图片。请检查酒馆版本和服务器报错；本次未生成成功。');
+  if (!data || data.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(data)) throw failure();
+  let bytes;
+  try { bytes = atob(data); } catch { throw failure(); }
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (bytes.length < 45 || !signature.every((value, index) => bytes.charCodeAt(index) === value)
+      || bytes.slice(8, 12) !== '\x00\x00\x00\x0d' || bytes.slice(12, 16) !== 'IHDR'
+      || bytes.slice(-12, -4) !== '\x00\x00\x00\x00IEND') throw failure();
+  return makeImage('image/png', data);
 }
 
 export function sanitizeFileName(value) {

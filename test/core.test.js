@@ -9,6 +9,7 @@ import {
   buildOpenAIRequest,
   buildNovelAIRequest,
   extractGeminiImages,
+  extractNovelAIImage,
   getDimensions,
   normalizeAspectRatio,
   normalizeImageSize,
@@ -80,6 +81,16 @@ test('NovelAI rejects empty prompts and incompatible sampler names before any re
   assert.throws(() => buildNovelAIRequest(settings, { prompt: ' ' }), /不能为空/);
   assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', sampler: 'euler' }), /不支持采样器/);
   assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', scheduler: 'normal' }), /不支持噪声调度/);
+  assert.throws(() => buildNovelAIRequest(settings, { prompt: 'flower', model: 'erato' }), /文字模型/);
+});
+
+test('NovelAI image parser accepts a real PNG and rejects text, HTML, JSON and incomplete bytes', () => {
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+  assert.equal(extractNovelAIImage(png).dataUrl, `data:image/png;base64,${png}`);
+  for (const value of ['', 'This is a story.', '<html>Not Found</html>', '{"error":true}', 'UE5H',
+    Buffer.from('This is a story.').toString('base64'), png.slice(0, -16)]) {
+    assert.throws(() => extractNovelAIImage(value), /未返回有效 PNG/);
+  }
 });
 
 test('derives supported ratio and size from code-controlled dimensions', () => {

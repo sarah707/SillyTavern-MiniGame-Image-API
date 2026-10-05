@@ -8,7 +8,9 @@ import * as core from '../core.js';
 const source = (await readFile(new URL('../index.js', import.meta.url), 'utf8'))
   .replace(/import\s*\{([\s\S]*?)\}\s*from '\.\/core\.js';/, 'const {$1} = core;');
 
-function createRuntime({ generateFailure = false, tokenError = false } = {}) {
+const PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+function createRuntime({ generateFailure = false, tokenError = false, imageResponse = PNG } = {}) {
   const calls = [];
   const secrets = [
     { id: 'original', active: true, value: 'masked-original' },
@@ -78,7 +80,7 @@ function createRuntime({ generateFailure = false, tokenError = false } = {}) {
       }
       if (path === '/api/novelai/generate-image') {
         assert.equal(secrets.find((item) => item.active).id, 'plugin');
-        return generateFailure ? new Response('Internal Server Error', { status: 500 }) : new Response('UE5H');
+        return generateFailure ? new Response('Internal Server Error', { status: 500 }) : new Response(imageResponse);
       }
       if (path === '/api/images/upload') return Response.json({ path: '/user/images/test/portrait.png' });
       throw new Error(`Unexpected request: ${path}`);
@@ -115,7 +117,7 @@ test('NovelAI generation uses the plugin secret, converts PNG base64 and uploads
   await runtime.api.init();
   const result = await runtime.api.generate({ prompt: 'flower', negativePrompt: 'text', saveToSillyTavern: true });
   assert.equal(result.provider, 'novelai');
-  assert.equal(result.images[0].dataUrl, 'data:image/png;base64,UE5H');
+  assert.equal(result.images[0].dataUrl, `data:image/png;base64,${PNG}`);
   assert.equal(result.images[0].url, 'http://localhost:8000/user/images/test/portrait.png');
   const request = runtime.calls.find((call) => call.path === '/api/novelai/generate-image').body;
   assert.equal(request.negative_prompt, 'text');
@@ -129,6 +131,14 @@ test('NovelAI generation failure restores the original secret', async () => {
   await runtime.api.init();
   await assert.rejects(runtime.api.generate({ prompt: 'flower' }), /HTTP 500/);
   assert.equal(runtime.secrets.find((item) => item.active).id, 'original');
+});
+
+test('NovelAI rejects an HTTP 200 text response and does not upload it or report success', async () => {
+  const runtime = createRuntime({ imageResponse: '{"output":"a story"}' });
+  await runtime.api.init();
+  await assert.rejects(runtime.api.generate({ prompt: 'flower', saveToSillyTavern: true }), /未返回有效 PNG/);
+  assert.equal(runtime.secrets.find((item) => item.active).id, 'original');
+  assert.ok(!runtime.calls.some((call) => call.path === '/api/images/upload'));
 });
 
 test('NovelAI concurrent calls serialize secret rotation and restore the original secret', async () => {

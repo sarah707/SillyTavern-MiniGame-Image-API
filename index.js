@@ -13,6 +13,7 @@ import {
   buildOpenAIRequest,
   buildNovelAIRequest,
   extractGeminiImages,
+  extractNovelAIImage,
   getDimensions,
   makeImage,
   normalizeAspectRatio,
@@ -298,8 +299,7 @@ async function generateNovelAI(requestOptions) {
   const base64 = await withActiveProviderSecret('novelai', () => requestText('/api/novelai/generate-image', {
     method: 'POST', body: JSON.stringify(body)
   }));
-  const image = makeImage('image/png', base64.trim());
-  if (!image) throw new Error('NovelAI 没有返回图片。');
+  const image = extractNovelAIImage(base64);
   return {
     images: [image], raw: null, model: body.model,
     aspectRatio: normalizeAspectRatio('', body.width, body.height),
@@ -720,7 +720,7 @@ async function init() {
     renderSettings(target);
     initialized = true;
     await refreshKeyState();
-    console.info(`[${DISPLAY_NAME}] v0.2.2 已加载`);
+    console.info(`[${DISPLAY_NAME}] v0.2.3 已加载`);
   })().catch((error) => {
     console.error(`[${DISPLAY_NAME}] 初始化失败`, error);
     globalThis.toastr?.error?.(`${DISPLAY_NAME}加载失败：${error.message}`);
